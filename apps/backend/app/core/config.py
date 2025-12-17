@@ -8,7 +8,7 @@ import sys
 
 class Settings(BaseSettings):
 
-    PROJECT_NAME: str = "Project Context"
+    PROJECT_NAME: str = "Contextualized"
 
     PYTHONDONTWRITEBYTECODE: int = 1
 
