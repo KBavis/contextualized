@@ -127,10 +127,12 @@ class IngestionJobService:
             if has_docs:
                 logger.info(f"IngestionJob for DataSource={data_source_id} has ingested relevant docs files; chunking & saving to ChromaDB")
 
+                #  TODO: How can we update this logic to intelligently use images/graphs/tables/charts that may be on documents? 
+
                 # TODO: Consider thread pool based on available resources to user (CPU cores, GPU, etc)
                 # run Docling conversion, chunking, and ChromaDB persistence in seperate worker thread 
                 await asyncio.to_thread(
-                    self.convert_chunk_and_store,
+                    self.docs_convert_chunk_and_store,
                     data_source,
                     project_id,
                     job_pk
@@ -141,6 +143,13 @@ class IngestionJobService:
             if has_code:
                 # TODO: Handle chunking and saving of Code files to Chroma DB 
                 logger.info(f"IngestionJob for DataSource={data_source_id} has ingested relevant code files; chunking & saving to ChromaDB")
+
+                await asyncio.to_thread(
+                    self.code_chunk_and_store, 
+                    data_source, 
+                    project_id,
+                    job_pk
+                )
 
 
             self._cleanup_tmp_dirs(job_pk)
@@ -182,21 +191,50 @@ class IngestionJobService:
         finally:
             # unlock DataSource after processing 
             await self.record_lock_svc.unlock(data_source_id, record_type=RecordType.DATA_SOURCE)
+        
+
+    def code_chunk_and_store(
+            self, 
+            data_source: DataSource, 
+            project_id: UUID, 
+            job_pk
+    ):
+        """
+        TODO: Combine this function with docs convert chunk and store 
+
+        Functionality to Chunk ingested code files and store them within Chroma DB collection
+
+        Args:
+            data_source (DataSource): the data source corresponding to current ingestion job 
+            project_id (Optional[UUID]): optional specified proejct to run ingestion job for 
+            job_pk (UUID): pk of current ingesetion job
+        """
+        logger.info(f"Converting, chunking, and storing downloaded Code files via workerThreadId={threading.get_ident()}")
+
+        # chunk & convert relevant code files (using CodeSplitter from LlamaIndex)
+        nodes = self._chunk_code(data_source, project_id, job_pk)
+
+        # save LlamaIndex nodes to ChromaDB collection
+        self._save_to_chroma(nodes, "CODE", data_source)
 
 
-    def convert_chunk_and_store(
+
+    def docs_convert_chunk_and_store(
             self,
             data_source: DataSource, 
             project_id: UUID,
             job_pk: UUID
         ):
         """
+        TODO: Combine this function with code chunk & store 
+
         Convert downloaded Documentation files to Docling files, chunk using Docling's HybridChunker,
         convert to LlamaIndex TextNodes & store in relevant Chroma DB collection
 
         Args:
             data_source (DataSource): the data source corresponding to current ingestion job
             project_id (Optional[UUID]): optional specified project to run ingestion job for 
+            job_pk (UUID): pk of current ingesetion job
         """
 
         logger.info(f"Converting, chunking, and storing downloaded Documentation via workerThreadId={threading.get_ident()}")
@@ -551,7 +589,47 @@ class IngestionJobService:
             raise Exception("Invalid directory path specified")
 
         return any(path.iterdir())
-    
+
+
+    def _chunk_code(self, data_source: DataSource, project_id: UUID, job_pk: UUID) -> Dict[str, List]:
+        """
+        Functionality to chunk code files via LlamaIndex (using CodeSplitter)
+
+        CodeSplitter uses treesitter under the hood to generate AST & create context-driven chunks
+
+        Args:
+            data_source (DataSource): data source we are ingesting docs for 
+            project_id (UUID): Optional project to ingest docs for 
+            job_pk (UUID): unique ID of current ingestion job
+        """    
+
+        """
+            TODO: 
+                1. Read from temporary directory
+                2. Use CodeSplitter from LlamaIndex 
+                    - NOTE: We don't necesasrily need to split out chunks by project like we did for documentation, but we do need to account for 
+                    - varying token limits by embeddings 
+
+                    Option 1)
+                        - We should configure our CodeSplitter 'maxchars' attribute correspond to 'most conversative embedding model'
+                                Steps:
+                                    1) Get all projects
+                                    2) Get embedding models configured for projects 
+                                    3) Get MINIMUM "token limits" for each embedding model 
+                                    4) Using "minimum" tokens, multiply this by around 4 (i.e 4 characters is around 1 token)
+                                    5) max_chars = min_token_limit * 4 * SAFETY_FACTOR (like .80-.90 to account for variance )
+                    Option 2) 
+                        - Instead of limiting all of them, we can just let CodeSplitter confiugre max chars for us
+                        - Prior to saving, we should check that the length of the chunk DOESN'T exceed the max token limit for the embedding confiugred for this collection
+                        - If it does, we likely will need to "break down chunk further intellignelty" 
+
+
+        """
+
+        # retrieve projects corresponding to data soruce 
+        projects = [record.project for record in data_source.project_data] if not project_id else [project_id] # TODO: Fix me for single project
+
+
 
 
     def _chunk_docs(self, data_source: DataSource, project_id: UUID, conversion_results: Iterator[ConversionResult]) -> Dict[str, List]: 
