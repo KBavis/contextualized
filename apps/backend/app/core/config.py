@@ -1,10 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 import logging
 import sys
 
 # TODO: There may be a better way to handle the excess configs we have here, maybe having "generic" settings VS "llm" settings
+
+# TODO: Move constants to constants.py and leave configurable values in herer 
 
 class Settings(BaseSettings):
 
@@ -66,6 +68,30 @@ class Settings(BaseSettings):
         "json",
         "yaml",
         "yml",
+    }
+
+    EXTENSION_TO_LANGUAGE: Dict[str, str] = {
+        "py": "python",
+        "js": "javascript",
+        "jsx": "javascript",
+        "ts": "typescript",
+        "tsx": "typescript",
+        "java": "java",
+        "c": "c",
+        "cpp": "cpp",
+        "cs": "csharp",
+        "rb": "ruby",
+        "php": "php",
+        "swift": "swift",
+        "pl": "perl",
+        "sh": "bash",
+        "sql": "sql",
+        "html": "html",
+        "css": "css",
+        "json": "json",
+        "yaml": "yaml",
+        "yml": "yaml",
+        "xml": "xml",
     }
 
     DOCS_FILE_EXTENSIONS: Set[str] = {"docx", "pdf", "md"}
